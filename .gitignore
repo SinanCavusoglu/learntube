@@ -23,3 +23,5 @@ backend/uploads/
 **/.ruff_cache/
 .DS_Store
 Thumbs.db
+.video-tools/
+artifacts/
