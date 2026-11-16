@@ -18,6 +18,8 @@ class AITests(unittest.TestCase):
         SQLModel.metadata.create_all(self.engine)
         self.engine_patch = patch.object(ai, 'engine', self.engine)
         self.engine_patch.start()
+        self.cors_patch = patch.object(ai, 'CORS_ORIGINS', ['http://localhost:5173', 'http://127.0.0.1:5173'])
+        self.cors_patch.start()
         self.environment = patch.dict(os.environ, {'AI_ENABLED': 'true', 'GEMINI_API_KEY': 'test-only-key',
                                                    'GEMINI_MODEL': 'gemini-2.5-flash-lite', 'AI_DAILY_REQUEST_LIMIT': '2',
                                                    'TAILSCALE_AI_LOGIN': '', 'TAILSCALE_AI_ORIGIN': ''})
@@ -30,6 +32,7 @@ class AITests(unittest.TestCase):
         self.client.close()
         self.environment.stop()
         self.engine_patch.stop()
+        self.cors_patch.stop()
         self.engine.dispose()
 
     def test_missing_key_and_remote_access_fail_closed(self):
@@ -82,6 +85,14 @@ class AITests(unittest.TestCase):
                         {'Tailscale-User-Login': ''}):
                 self.assertEqual(self.client.post('/api/ai/explain-vocabulary', headers={**headers, **bad},
                                                   json={'request_id': str(uuid4()), 'text': 'word'}).status_code, 403)
+
+    def test_local_pc_accepts_both_loopback_browser_origins(self):
+        answer = ai.VocabularyExplanation(definition='A simple meaning.', examples=['Example one.', 'Example two.'])
+        with patch.object(ai, '_generate', return_value=answer):
+            for origin in ('http://localhost:5173', 'http://127.0.0.1:5173'):
+                response = self.client.post('/api/ai/explain-vocabulary', headers={'Origin': origin},
+                                            json={'request_id': str(uuid4()), 'text': 'word'})
+                self.assertEqual(response.status_code, 200, response.text)
 
     def test_writing_feedback_is_independent_of_essay(self):
         app = FastAPI()
