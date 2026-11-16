@@ -1,8 +1,8 @@
-"""Opt-in, local-only Gemini learning assistance. Secrets never leave this module."""
+"""Opt-in Gemini assistance for localhost and one configured private Tailscale origin."""
 import os
 import threading
 from datetime import datetime, timedelta, timezone
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -36,6 +36,23 @@ class VocabularyExplanation(BaseModel):
 
 
 def _local_guard(request: Request) -> None:
+    authority = request.headers.get('host', '').split(':')[0].strip('[]').lower()
+    origin = request.headers.get('origin')
+    login = os.getenv('TAILSCALE_AI_LOGIN', '').strip().lower()
+    tailnet_origin = os.getenv('TAILSCALE_AI_ORIGIN', '').strip().rstrip('/')
+    # Tailscale Serve replaces client-supplied identity headers with verified identity.
+    # The API and Vite proxy both listen on loopback, limiting header spoofing to local software.
+    if login and tailnet_origin and request.headers.get('tailscale-user-login', '').lower() == login:
+        forwarded_ip = request.headers.get('x-forwarded-for', '').split(',')[0].strip()
+        try:
+            from_tailnet = ip_address(forwarded_ip) in ip_network('100.64.0.0/10')
+        except ValueError:
+            from_tailnet = False
+        allowed_host = authority in {'localhost', '127.0.0.1', '::1', urlsplit(tailnet_origin).hostname}
+        allowed_origin = origin == tailnet_origin if request.method != 'GET' else origin in {None, tailnet_origin}
+        if from_tailnet and allowed_host and allowed_origin:
+            return
+        raise HTTPException(403, 'Untrusted Tailscale request.')
     if any(request.headers.get(name) for name in ('x-forwarded-for', 'x-real-ip', 'forwarded')):
         raise HTTPException(403, 'AI is available only on this computer.')
     host = request.client.host if request.client else ''
@@ -45,10 +62,8 @@ def _local_guard(request: Request) -> None:
                 raise ValueError()
         except ValueError:
             raise HTTPException(403, 'AI is available only on this computer.')
-    authority = request.headers.get('host', '').split(':')[0].strip('[]').lower()
     if authority not in {'localhost', '127.0.0.1', '::1', 'testserver'}:
         raise HTTPException(403, 'AI is available only on this computer.')
-    origin = request.headers.get('origin')
     if origin and origin not in CORS_ORIGINS:
         raise HTTPException(403, 'Untrusted application origin.')
     if origin and urlsplit(origin).hostname not in {'localhost', '127.0.0.1', '::1'}:

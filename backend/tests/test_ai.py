@@ -19,7 +19,8 @@ class AITests(unittest.TestCase):
         self.engine_patch = patch.object(ai, 'engine', self.engine)
         self.engine_patch.start()
         self.environment = patch.dict(os.environ, {'AI_ENABLED': 'true', 'GEMINI_API_KEY': 'test-only-key',
-                                                   'GEMINI_MODEL': 'gemini-2.5-flash-lite', 'AI_DAILY_REQUEST_LIMIT': '2'})
+                                                   'GEMINI_MODEL': 'gemini-2.5-flash-lite', 'AI_DAILY_REQUEST_LIMIT': '2',
+                                                   'TAILSCALE_AI_LOGIN': '', 'TAILSCALE_AI_ORIGIN': ''})
         self.environment.start()
         app = FastAPI()
         app.include_router(ai.router)
@@ -64,6 +65,23 @@ class AITests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/ai/explain-vocabulary', json={'request_id': str(uuid4()), 'text': 'x', 'context': 'No context'}).status_code, 422)
         self.assertEqual(self.client.post('/api/ai/explain-vocabulary', json={'request_id': str(uuid4()), 'text': 'x'*501}).status_code, 422)
         self.assertEqual(self.client.post('/api/ai/explain-text', json={'request_id': str(uuid4()), 'text': 'x'}).status_code, 404)
+
+    def test_tailscale_serve_requires_identity_origin_and_private_source(self):
+        origin = 'https://desktop.example.ts.net'
+        headers = {'Tailscale-User-Login': 'owner@example.com', 'X-Forwarded-For': '100.75.58.47',
+                   'Origin': origin, 'Host': '127.0.0.1:8001'}
+        with patch.dict(os.environ, {'TAILSCALE_AI_LOGIN': 'owner@example.com', 'TAILSCALE_AI_ORIGIN': origin}):
+            self.assertTrue(self.client.get('/api/ai/status', headers=headers).json()['enabled'])
+            result = ai.VocabularyExplanation(definition='A simple meaning.', examples=['Example one.', 'Example two.'])
+            with patch.object(ai, '_generate', return_value=result):
+                response = self.client.post('/api/ai/explain-vocabulary', headers=headers,
+                                            json={'request_id': str(uuid4()), 'text': 'word'})
+                self.assertEqual(response.status_code, 200, response.text)
+            for bad in ({'Tailscale-User-Login': 'other@example.com'}, {'Origin': 'https://evil.example'},
+                        {'X-Forwarded-For': '192.168.1.50'}, {'X-Forwarded-For': ''},
+                        {'Tailscale-User-Login': ''}):
+                self.assertEqual(self.client.post('/api/ai/explain-vocabulary', headers={**headers, **bad},
+                                                  json={'request_id': str(uuid4()), 'text': 'word'}).status_code, 403)
 
     def test_writing_feedback_is_independent_of_essay(self):
         app = FastAPI()
