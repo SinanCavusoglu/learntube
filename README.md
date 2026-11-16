@@ -6,6 +6,12 @@ Personal IELTS study platform built with React, TypeScript, Vite, Tailwind CSS, 
 
 Double-click `start-learntube.bat` in the project folder. It starts the API on port 8001, the frontend on port 5173, and opens LearnTube in your browser.
 
+## Use from an iPhone over your private Tailscale network (Windows PC)
+
+Install Tailscale on this PC and your iPhone and sign in to the same tailnet. On this PC, enable Tailscale Serve once with `tailscale serve --bg 5173` in an Administrator terminal. Double-click `start-learntube-mobile.bat` to run the API and UI on this PC. In iPhone Safari, open the HTTPS address shown by `tailscale serve status`. Keep Tailscale connected on the iPhone, this PC awake, and both LearnTube command windows open. The existing `start-learntube.bat` remains for PC-only use; close its windows before starting mobile mode because both use ports 5173 and 8001.
+
+Mobile mode uses a separate Vite configuration to proxy `/api` through the same private HTTPS origin. The one-line `frontend/.env.mobile` is created from `frontend/mobile.env.template` on first start. Tailscale Serve is private to devices allowed in your tailnet; do not enable Tailscale Funnel. The Gemini endpoint intentionally accepts only localhost browser origins, so Gemini is unavailable from the iPhone until the app has an explicit remote-access security design. Other app data stays in the existing local SQLite database and PDF uploads on this PC. Stop sharing with `tailscale serve --https=443 off` in an Administrator terminal.
+
 ## Frontend
 
 ```powershell
