@@ -18,6 +18,7 @@ from app.services.search_index import ensure_index
 from app.core.config import PDF_STORAGE_DIR
 from app.routers.bookmarks import router as bookmarks_router
 from app.routers.planner import router as planner_router
+from app.routers.focus import router as focus_router
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     backup_service.recover_if_needed()
@@ -39,5 +40,6 @@ app.include_router(backups_router)
 app.include_router(search_router)
 app.include_router(bookmarks_router)
 app.include_router(planner_router)
+app.include_router(focus_router)
 @app.get('/api/health', tags=['health'])
 async def health_check() -> dict[str, str]: return {'status': 'ok'}

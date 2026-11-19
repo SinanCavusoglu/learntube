@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Bookmark as BookmarkIcon, Pencil, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Bookmark } from '@/lib/api'
@@ -28,6 +28,20 @@ export function BookmarkEditor({ location, title: initialTitle, note: initialNot
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const submitting = useRef(false)
+  const dialog = useRef<HTMLFormElement>(null)
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    return () => previous?.focus()
+  }, [])
+  const handleKeys = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key === 'Escape' && !pending) { event.preventDefault(); onClose(); return }
+    if (event.key !== 'Tab') return
+    const focusable = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled)') ?? [])
+    if (!focusable.length) return
+    const first = focusable[0], last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  }
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (submitting.current || !title.trim()) return
@@ -37,7 +51,7 @@ export function BookmarkEditor({ location, title: initialTitle, note: initialNot
     finally { submitting.current = false; setPending(false) }
   }
   return <div className="fixed inset-0 z-[90] grid place-items-center bg-black/70 p-4" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !pending) onClose() }}>
-    <form onSubmit={submit} role="dialog" aria-modal="true" aria-label={editing ? 'Edit bookmark' : 'Save bookmark'} onKeyDown={event => { if (event.key === 'Escape' && !pending) onClose() }} className="w-full max-w-md rounded-2xl border border-white/15 bg-[#202126] p-6 shadow-2xl">
+    <form ref={dialog} onSubmit={submit} role="dialog" aria-modal="true" aria-label={editing ? 'Edit bookmark' : 'Save bookmark'} onKeyDown={handleKeys} className="w-full max-w-md rounded-2xl border border-white/15 bg-[#202126] p-6 shadow-2xl">
       <div className="flex items-center justify-between"><div className="flex items-center gap-2"><BookmarkIcon size={18} className="text-indigo-300"/><h2 className="text-lg font-semibold">{editing ? 'Edit Bookmark' : 'Save Bookmark'}</h2></div><button type="button" aria-label="Close" disabled={pending} onClick={onClose} className="text-zinc-400 hover:text-white"><X size={18}/></button></div>
       <p className="mt-2 text-sm text-zinc-400">{location}</p>
       <label className="mt-5 block text-sm text-zinc-300">Title<input autoFocus required maxLength={120} value={title} onChange={event => setTitle(event.target.value)} className="mt-2 w-full rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-zinc-100 outline-none focus:border-indigo-300"/></label>

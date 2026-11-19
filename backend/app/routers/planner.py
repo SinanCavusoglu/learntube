@@ -197,14 +197,17 @@ def edit(plan_id: int, payload: PlanInput, occurrence: date | None = None, sessi
     if occurrence is None:
         if payload.repeat_until and payload.repeat_until < payload.start_date:
             raise HTTPException(422, 'Recurrence end date must be on or after the first date')
+        if plan.recurrence == 'none' and payload.recurrence != 'none' and plan.status != 'planned':
+            raise HTTPException(409, 'Mark the plan incomplete before turning it into a recurring series')
         candidate = StudyPlan(start_date=payload.start_date, recurrence=payload.recurrence,
                               weekdays=','.join(str(day) for day in payload.weekdays), repeat_until=payload.repeat_until)
-        for moved_row in session.exec(select(StudyPlanOverride).where(StudyPlanOverride.plan_id == plan.id,
-                                                                     StudyPlanOverride.is_modified == True,
-                                                                     StudyPlanOverride.date_override != None,
-                                                                     StudyPlanOverride.status != 'deleted')).all():
+        for moved_row in session.exec(select(StudyPlanOverride).where(StudyPlanOverride.plan_id == plan.id)).all():
+            if not occurs_on(candidate, moved_row.occurrence_date):
+                raise HTTPException(409, 'Series changes would hide an existing occurrence change; edit that occurrence first')
+            if not moved_row.is_modified or moved_row.date_override is None or moved_row.status == 'deleted':
+                continue
             if (moved_row.date_override != moved_row.occurrence_date and
-                    occurs_on(candidate, moved_row.occurrence_date) and occurs_on(candidate, moved_row.date_override)):
+                    occurs_on(candidate, moved_row.date_override)):
                 raise HTTPException(409, 'Series changes would duplicate a moved occurrence; move that occurrence first')
         _apply(plan, payload)
         session.add(plan); session.commit(); session.refresh(plan)

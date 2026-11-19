@@ -122,6 +122,10 @@ class StudyPlan(SQLModel, table=True):
     resource_type: Optional[str] = None
     resource_id: Optional[int] = None
     status: str = 'planned'  # Used only by one-time plans.
+    estimated_pomodoros: int = 1
+    focus_minutes: Optional[int] = None
+    short_break_minutes: Optional[int] = None
+    long_break_minutes: Optional[int] = None
     created_at: datetime = Field(default_factory=now)
     updated_at: datetime = Field(default_factory=now)
 
@@ -142,7 +146,41 @@ class StudyPlanOverride(SQLModel, table=True):
     resource_type: Optional[str] = None
     resource_id: Optional[int] = None
     status: str = 'planned'  # planned/completed/skipped/deleted
+    estimated_pomodoros: Optional[int] = None
+    focus_minutes: Optional[int] = None
+    short_break_minutes: Optional[int] = None
+    long_break_minutes: Optional[int] = None
     updated_at: datetime = Field(default_factory=now)
+
+
+class FocusSettings(SQLModel, table=True):
+    id: int = Field(default=1, primary_key=True)
+    focus_minutes: int = 30
+    short_break_minutes: int = 5
+    long_break_minutes: int = 15
+    long_break_after: int = 4
+    auto_start_breaks: bool = False
+    auto_start_focus: bool = False
+    notification_sound: bool = True
+    browser_notifications: bool = False
+    ticking_sound: bool = False
+
+
+class FocusSession(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    phase: str
+    status: str = Field(index=True)
+    target_seconds: int
+    verified_seconds: float = 0
+    task_plan_id: Optional[int] = Field(default=None, index=True)
+    task_occurrence_date: Optional[date] = Field(default=None, index=True)
+    task_date: Optional[date] = None
+    task_title: str = ''
+    category: str = 'General Study'
+    started_at: datetime = Field(default_factory=now, index=True)
+    updated_at: datetime = Field(default_factory=now)
+    completed_at: Optional[datetime] = Field(default=None, index=True)
+    revision: int = 0
 
 class PDFDocument(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

@@ -17,6 +17,7 @@ from uuid import uuid4
 from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 
 from sqlmodel import SQLModel
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app import models  # noqa: F401 - registers every persisted model
@@ -79,11 +80,16 @@ class BackupService:
                 tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 for table in SQLModel.metadata.tables.values():
                     if table.name not in tables:
-                        if table.name in {'bookmark', 'studyplan', 'studyplanoverride'}:
+                        if table.name in {'bookmark', 'studyplan', 'studyplanoverride', 'focussettings', 'focussession'}:
                             continue  # Archives predating these additive features remain restorable.
                         raise BackupError('The backup database schema is incompatible.')
                     columns = {row[1] for row in connection.execute(f'PRAGMA table_info("{table.name}")')}
-                    if not {column.name for column in table.columns}.issubset(columns):
+                    expected = {column.name for column in table.columns}
+                    if table.name in {'studyplan', 'studyplanoverride'}:
+                        expected -= {'estimated_pomodoros', 'focus_minutes', 'short_break_minutes', 'long_break_minutes'}
+                    if table.name == 'focussession':
+                        expected -= {'task_date'}
+                    if not expected.issubset(columns):
                         raise BackupError('The backup database schema is incompatible.')
                 return {table.name: connection.execute(f'SELECT COUNT(*) FROM "{table.name}"').fetchone()[0]
                         for table in SQLModel.metadata.tables.values() if table.name in tables}
@@ -105,6 +111,10 @@ class BackupService:
             with closing(sqlite3.connect(f'{self.database.as_uri()}?mode=ro', uri=True)) as source:
                 with closing(sqlite3.connect(destination)) as target:
                     source.backup(target)
+                    if target.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='focussession'").fetchone():
+                        # Portable backups retain history and verified progress, but never auto-run a restored timer.
+                        target.execute("UPDATE focussession SET status='paused' WHERE status='running'")
+                        target.commit()
         except (sqlite3.DatabaseError, OSError) as exc:
             raise BackupError('Could not create a consistent SQLite snapshot.') from exc
 
@@ -262,7 +272,11 @@ class BackupService:
                 os.replace(self.pdf_dir, old_dir)
             os.replace(prepared, self.pdf_dir)
             self._replace_database(staging / 'database.sqlite3')
+            from app.db import migrate_focus_columns
+            migrate_focus_columns(self.engine)
             SQLModel.metadata.create_all(self.engine)
+            with self.engine.begin() as connection:
+                connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_focus_active ON focussession((1)) WHERE status IN ('running','paused')"))
             self._check_database(self.database)
         finally:
             if prepared != staged_pdfs and prepared.exists():

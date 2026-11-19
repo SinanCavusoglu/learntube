@@ -72,7 +72,28 @@ def get_transcript(video_id: int, session: Session = Depends(get_session)):
     segments=[TranscriptSegment(video_id=video_id, **row) for row in rows]; session.add_all(segments); session.commit(); return segments
 @router.post('/{video_id}/transcript/refresh')
 def refresh_transcript(video_id: int, session: Session = Depends(get_session)):
-    video_or_404(session, video_id); session.exec(delete(TranscriptSegment).where(TranscriptSegment.video_id == video_id)); session.commit(); return get_transcript(video_id, session)
+    video = video_or_404(session, video_id)
+    try:
+        rows = fetch_english(video.youtube_id)
+    except Exception as exc:
+        raise HTTPException(424, 'English captions could not be retrieved. The saved transcript was kept.') from exc
+    if not rows:
+        raise HTTPException(424, 'No English captions were returned. The saved transcript was kept.')
+    # Do not discard the cached transcript until the replacement is available.
+    # Delete and insert commit together, so a database error rolls both back.
+    session.exec(delete(TranscriptSegment).where(TranscriptSegment.video_id == video_id))
+    segments = [TranscriptSegment(video_id=video_id, **row) for row in rows]
+    session.add_all(segments)
+    session.commit()
+    return segments
 @router.put('/{video_id}/transcript/manual')
 def manual_transcript(video_id: int, payload: ManualTranscript, session: Session = Depends(get_session)):
-    video_or_404(session, video_id); session.exec(delete(TranscriptSegment).where(TranscriptSegment.video_id == video_id)); segments=[TranscriptSegment(video_id=video_id, text=line.strip(), is_manual=True) for line in payload.text.splitlines() if line.strip()]; session.add_all(segments); session.commit(); return segments
+    video_or_404(session, video_id)
+    segments = [TranscriptSegment(video_id=video_id, text=line.strip(), is_manual=True)
+                for line in payload.text.splitlines() if line.strip()]
+    if not segments:
+        raise HTTPException(422, 'Enter at least one line of transcript text')
+    session.exec(delete(TranscriptSegment).where(TranscriptSegment.video_id == video_id))
+    session.add_all(segments)
+    session.commit()
+    return segments

@@ -6,11 +6,15 @@ Personal IELTS study platform built with React, TypeScript, Vite, Tailwind CSS, 
 
 Double-click `start-learntube.bat` in the project folder. It starts the API on port 8001, the frontend on port 5173, and opens LearnTube in your browser.
 
+The launcher checks installed dependencies and waits for both services to respond before opening the page. If LearnTube is already running, it reuses the existing services. Run `start-learntube.bat --check` in Command Prompt to check dependencies without starting anything. Close the **LearnTube API** and **LearnTube Frontend** command windows to stop the local application.
+
+Video and PDF notes keep an unsaved recovery draft in this browser if a save fails or you leave while a save is pending. Reopen the same item in the same browser to retry. Wait for **Saved** before creating a backup: browser recovery drafts are not included in backup ZIPs.
+
 ## Use from an iPhone over your private Tailscale network (Windows PC)
 
 Install Tailscale on this PC and your iPhone and sign in to the same tailnet. On this PC, enable Tailscale Serve once with `tailscale serve --bg 5173` in an Administrator terminal. Double-click `start-learntube-mobile.bat` to run the API and UI on this PC. In iPhone Safari, open the HTTPS address shown by `tailscale serve status`. Keep Tailscale connected on the iPhone, this PC awake, and both LearnTube command windows open. The existing `start-learntube.bat` remains for PC-only use; close its windows before starting mobile mode because both use ports 5173 and 8001.
 
-Mobile mode uses a separate Vite configuration to proxy `/api` through the same private HTTPS origin. The one-line `frontend/.env.mobile` is created from `frontend/mobile.env.template` on first start. Tailscale Serve is private to devices allowed in your tailnet; do not enable Tailscale Funnel. Gemini can also work from the iPhone when `TAILSCALE_AI_ORIGIN` is set to the exact private HTTPS URL and `TAILSCALE_AI_LOGIN` to your Tailscale login in the ignored `backend/.env`; the backend checks both plus Tailscale's identity header. The optional `AI_DAILY_REQUEST_LIMIT` remains a local safeguard. Other app data stays in the existing local SQLite database and PDF uploads on this PC. Stop sharing with `tailscale serve --https=443 off` in an Administrator terminal.
+The frontend proxies `/api` to the local backend in both PC and mobile modes, so the browser uses the same origin for application requests. The one-line `frontend/.env.mobile` is created from `frontend/mobile.env.template` on first start. Tailscale Serve is private to devices allowed in your tailnet; do not enable Tailscale Funnel. Gemini can also work from the iPhone when `TAILSCALE_AI_ORIGIN` is set to the exact private HTTPS URL and `TAILSCALE_AI_LOGIN` to your Tailscale login in the ignored `backend/.env`; the backend checks both plus Tailscale's identity header. The optional `AI_DAILY_REQUEST_LIMIT` remains a local safeguard. Other app data stays in the existing local SQLite database and PDF uploads on this PC. Stop sharing with `tailscale serve --https=443 off` in an Administrator terminal.
 
 ## Frontend
 
@@ -68,7 +72,13 @@ Plans may repeat daily, weekly on the first date's weekday, or on selected weekd
 
 Planned time is the sum of timed block durations, including skipped blocks. Completed plan time includes only blocks you explicitly mark completed. Untimed tasks have no duration. Neither action creates `StudyActivity` records or changes the Dashboard's actual study-time totals. The Dashboard's **Upcoming Study Plan** section shows upcoming timed plans and today's unfinished tasks separately from real activity. Saved plans, recurrence rules, and occurrence changes live in the local SQLite database and are included in new ZIP backups. Older backups without planner tables remain restorable. If a linked video, PDF, or note was deleted, the plan stays visible and opens its related library instead.
 
-Planner requests are limited to 63 local calendar days at once. There is no drag-and-drop; use **Edit** to move a block. Editing a whole series can leave old occurrence overrides outside the new recurrence dates dormant. No plans are created automatically.
+Planner requests are limited to 63 local calendar days at once. There is no drag-and-drop; use **Edit** to move a block. A series edit that would hide an existing occurrence override is rejected. No plans are created automatically.
+
+## Focus Timer
+
+Open **Focus Timer** in the sidebar to run a Pomodoro, short break, or long break. The initial durations are 30, 5, and 15 minutes; change them under **Settings**. Start, pause, resume, stop, and reset controls work across LearnTube pages through the small sidebar timer. A completed Pomodoro is recorded once in the local SQLite history. A stopped session or a break does not count as a completed Pomodoro. The timer pauses after a long browser interruption rather than crediting unverified time; resume it when you return. Keep LearnTube open for the timer and notification sounds. Browser notifications require permission. Only one tab controls an active timer at a time.
+
+The task list shows Study Planner plans for the chosen date. **Add Task** creates an untimed Planner task; editing, completing, or deleting a task updates the same Planner record. Recurring tasks are edited one occurrence at a time here; edit the whole series in Study Planner. You can also open a Planner block and choose **Start Focus Session**. Each task can set its Pomodoro estimate and optional focus or break durations. Changing a duration affects future sessions, not a running session. Completing a Pomodoro does not automatically mark the task complete. The Dashboard shows a separate Focus summary; its existing actual study activity calculation is unchanged. Focus settings, tasks, and session history are included in new local backups, and older backups remain restorable. No sample sessions are created.
 
 Run checks with `cd backend; .\.venv\Scripts\python.exe -m unittest discover -s tests -q` and `cd frontend; npm.cmd run build; node --test tests/*.test.mjs`.
 

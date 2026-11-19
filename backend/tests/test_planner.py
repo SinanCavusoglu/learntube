@@ -151,6 +151,19 @@ class PlannerTests(unittest.TestCase):
         finally:
             reopened.dispose()
 
+    def test_series_edit_cannot_hide_completed_occurrences_or_spread_completion(self):
+        single = self.create()
+        self.client.patch(f'/api/planner/{single["id"]}/status', json={'status': 'completed'})
+        daily = self.payload(recurrence='daily')
+        self.assertEqual(self.client.patch(f'/api/planner/{single["id"]}', json=daily).status_code, 409)
+        self.assertEqual(self.client.get(f'/api/planner/{single["id"]}').json()['status'], 'completed')
+        self.client.patch(f'/api/planner/{single["id"]}/status', json={'status': 'planned'})
+        self.assertEqual(self.client.patch(f'/api/planner/{single["id"]}', json=daily).status_code, 200)
+        self.client.patch(f'/api/planner/{single["id"]}/status?occurrence=2026-11-19', json={'status': 'completed'})
+        changed = self.payload(recurrence='weekly', start_date='2026-11-20')
+        self.assertEqual(self.client.patch(f'/api/planner/{single["id"]}', json=changed).status_code, 409)
+        self.assertEqual(self.range('2026-11-19', '2026-11-20')[0]['status'], 'completed')
+
     def test_backup_restore_preserves_plans_and_overrides(self):
         plan = self.create(recurrence='daily')
         self.client.patch(f'/api/planner/{plan["id"]}/status?occurrence=2026-11-19', json={'status': 'completed'})

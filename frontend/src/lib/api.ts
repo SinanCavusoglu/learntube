@@ -1,4 +1,4 @@
-export const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001'
+export const API = import.meta.env.VITE_API_URL ?? ''
 export type Video = { id:number; youtube_id:string; url:string; title:string; created_at:string; last_watched_at?:string; playback_position:number }
 export type Segment = { id:number; text:string; start:number|null; duration:number|null; is_manual:boolean }
 export type Note = { content:string; updated_at?:string }
@@ -122,4 +122,25 @@ export const podcastApi = {
   notes:(id:number)=>request<Note>(`/api/podcasts/episodes/${id}/notes`),
   saveNotes:(id:number,content:string)=>request<Note>(`/api/podcasts/episodes/${id}/notes`,{method:'PUT',body:JSON.stringify({content})}),
   vocabulary:(id:number)=>request<Vocabulary[]>(`/api/vocabulary?episode_id=${id}`),
+}
+
+export type FocusPhase = 'focus'|'short_break'|'long_break'
+export type FocusSettings = {focus_minutes:number;short_break_minutes:number;long_break_minutes:number;long_break_after:number;auto_start_breaks:boolean;auto_start_focus:boolean;notification_sound:boolean;browser_notifications:boolean;ticking_sound:boolean}
+export type FocusSession = {id:string;phase:FocusPhase;status:'running'|'paused'|'completed'|'stopped';target_seconds:number;verified_seconds:number;task_plan_id:number|null;task_occurrence_date:string|null;task_date:string|null;task_title:string;category:PlannerCategory;started_at:string;updated_at:string;completed_at:string|null;revision:number}
+export type FocusTask = PlannerOccurrence & {estimated_pomodoros:number;completed_pomodoros:number;focus_minutes:number;short_break_minutes:number|null;long_break_minutes:number|null}
+export type FocusTaskInput = {title:string;description:string;category:PlannerCategory;date:string;timezone:string;estimated_pomodoros:number;focus_minutes:number;short_break_minutes:number|null;long_break_minutes:number|null}
+export type FocusStats = {completed_total:number;today:{pomodoros:number;focus_seconds:number;tasks_completed:number;tasks_total:number;estimated_pomodoros:number};week:{pomodoros:number;focus_seconds:number;daily:Record<string,{pomodoros:number;focus_seconds:number}>}}
+export const focusApi = {
+  settings:()=>request<FocusSettings>('/api/focus/settings'),
+  saveSettings:(value:FocusSettings)=>request<FocusSettings>('/api/focus/settings',{method:'PUT',body:JSON.stringify(value)}),
+  tasks:(day:string)=>request<FocusTask[]>(`/api/focus/tasks?day=${day}`),
+  createTask:(value:FocusTaskInput,request_id:string)=>request<{plan_id:number;date:string}>('/api/focus/tasks',{method:'POST',body:JSON.stringify({...value,request_id})}),
+  editTask:(id:number,occurrence:string,day:string,value:FocusTaskInput)=>request<{plan_id:number;date:string}>(`/api/focus/tasks/${id}?occurrence=${occurrence}&day=${day}`,{method:'PUT',body:JSON.stringify(value)}),
+  deleteTask:(id:number,occurrence:string,day:string)=>request<void>(`/api/focus/tasks/${id}?occurrence=${occurrence}&day=${day}`,{method:'DELETE'}),
+  taskStatus:(id:number,occurrence:string,day:string,completed:boolean)=>request<{status:string}>(`/api/focus/tasks/${id}/status?occurrence=${occurrence}&day=${day}&completed=${completed}`,{method:'PUT'}),
+  active:()=>request<FocusSession|null>('/api/focus/sessions/active'),
+  start:(id:string,phase:FocusPhase,task?:FocusTask|null)=>request<FocusSession>('/api/focus/sessions',{method:'POST',body:JSON.stringify({id,phase,task_plan_id:task?.plan_id??null,task_occurrence_date:task?.occurrence_date??null,task_date:task?.date??null})}),
+  action:(id:string,action:'checkpoint'|'pause'|'resume'|'complete'|'stop',revision:number,verified_seconds:number)=>request<FocusSession>(`/api/focus/sessions/${id}`,{method:'PUT',body:JSON.stringify({action,revision,verified_seconds})}),
+  history:(start:string,end:string,timezone_name:string)=>request<FocusSession[]>(`/api/focus/sessions/history?start=${start}&end=${end}&timezone_name=${encodeURIComponent(timezone_name)}`),
+  stats:(day:string,timezone_name:string)=>request<FocusStats>(`/api/focus/stats?day=${day}&timezone_name=${encodeURIComponent(timezone_name)}`),
 }
