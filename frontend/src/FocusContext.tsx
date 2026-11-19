@@ -15,6 +15,7 @@ type Controller = {
 }
 const Context=createContext<Controller|null>(null)
 const snapshotKey='learntube-focus-snapshot',leaseKey='learntube-focus-lease'
+const leaseTimeoutMs=90_000
 type Snapshot={id:string;verified:number;at:number}
 type Anchor={base:number;started:number;lastWall:number;lastMono:number}
 const timezone=()=>Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'
@@ -44,7 +45,7 @@ export function FocusProvider({children}:{children:ReactNode}){
   const [controllerId]=useState(()=>crypto.randomUUID())
   const updateSession=(next:FocusSession|null)=>{sessionRef.current=next;setSession(next)}
   const lease=()=>safeRead<{owner:string;at:number}>(leaseKey)
-  const ownLease=()=>{const current=lease();return !current||current.owner===controllerId||Date.now()-current.at>6000}
+  const ownLease=()=>{const current=lease();return !current||current.owner===controllerId||Date.now()-current.at>leaseTimeoutMs}
   const claim=()=>{if(!ownLease()){readOnlyRef.current=true;setReadOnly(true);return false}safeWrite(leaseKey,{owner:controllerId,at:Date.now()});readOnlyRef.current=false;setReadOnly(false);return true}
   const currentElapsed=()=>{const row=sessionRef.current,a=anchor.current;return row&&a&&row.status==='running'?Math.min(row.target_seconds,elapsedSeconds(a.base,a.started,performance.now())):row?.verified_seconds??0}
   const clearActive=()=>{updateSession(null);anchor.current=null;setDisplayElapsed(0);safeRemove(snapshotKey);if(lease()?.owner===controllerId)safeRemove(leaseKey)}
@@ -59,7 +60,20 @@ export function FocusProvider({children}:{children:ReactNode}){
       else{updateSession(next);if(action!=='checkpoint')setDisplayElapsed(next.verified_seconds);if(next.status==='paused')anchor.current=null;else if(action==='resume')anchor.current={base:next.verified_seconds,started:performance.now(),lastWall:Date.now(),lastMono:performance.now()}}
       invalidate()
       return next
-    }catch(cause){setError(cause instanceof Error?cause.message:'Timer action failed.');const fresh=await focusApi.active().catch(()=>null);if(fresh){updateSession(fresh);anchor.current=null;setMessage('Timer state changed. Resume to continue.')}return null}
+    }catch(cause){
+      setError(cause instanceof Error?cause.message:'Timer action failed.')
+      try{
+        const fresh=await focusApi.active()
+        if(!fresh){clearActive();setMessage('Timer ended. Check Focus statistics for a completed session.')}
+        else if(fresh.id===row.id&&fresh.status==='running'){
+          updateSession(fresh)
+          // A missed checkpoint response must not freeze a still-running timer.
+          if(anchor.current)setDisplayElapsed(currentElapsed())
+          setMessage('Timer sync was interrupted; the countdown is continuing.')
+        }else{updateSession(fresh);anchor.current=null;setMessage('Timer state changed. Resume when ready.')}
+      }catch{setMessage('Connection interrupted; countdown continues and will retry syncing.')}
+      return null
+    }
     finally{busyRef.current=false;setBusy(false)}
   }
   const start=async(nextPhase:FocusPhase=phase,task:FocusTask|null=selectedTask)=>{
@@ -107,7 +121,7 @@ export function FocusProvider({children}:{children:ReactNode}){
         setDisplayElapsed(anchor.current.base)
       }else{
         const verified=snapshot?.id===active.id?Math.max(active.verified_seconds,snapshot.verified):active.verified_seconds
-        try{const paused=await focusApi.action(active.id,'pause',active.revision,Math.min(verified,active.target_seconds));if(!cancelled){updateSession(paused);setMessage('Interrupted session recovered. Resume when ready.')}}
+        try{const paused=await focusApi.action(active.id,'pause',active.revision,Math.min(verified,active.target_seconds));if(!cancelled){updateSession(paused);setMessage('Timer paused after the page was closed or inactive. Resume when ready.')}}
         catch{if(!cancelled)setMessage('Timer recovery needs attention. Refresh or stop the session.')}
       }
     }catch(cause){if(!cancelled)setError(cause instanceof Error?cause.message:'Focus timer could not load.')}
@@ -116,13 +130,13 @@ export function FocusProvider({children}:{children:ReactNode}){
   useEffect(()=>{if(!session)return;const timer=window.setInterval(()=>{
     const row=sessionRef.current
     if(!row)return
-    if(readOnlyRef.current){const remote=safeRead<Snapshot>(snapshotKey);setDisplayElapsed(remote?.id===row.id&&Date.now()-remote.at<6000?remote.verified+(Date.now()-remote.at)/1000:row.verified_seconds);if(ownLease()){claim();void focusApi.active().then(fresh=>{if(fresh){updateSession(fresh);if(fresh.status==='running')void act('pause',fresh.verified_seconds)}else clearActive()}).catch(()=>undefined)}return}
+    if(readOnlyRef.current){const remote=safeRead<Snapshot>(snapshotKey);setDisplayElapsed(remote?.id===row.id&&Date.now()-remote.at<leaseTimeoutMs?remote.verified+(Date.now()-remote.at)/1000:row.verified_seconds);if(ownLease()){claim();void focusApi.active().then(fresh=>{if(fresh){updateSession(fresh);if(fresh.status==='running')void act('pause',fresh.verified_seconds).then(paused=>{if(paused)setMessage('Previous tab stopped responding. Timer paused to protect your progress. Resume when ready.')})}else clearActive()}).catch(()=>undefined)}return}
     safeWrite(leaseKey,{owner:controllerId,at:Date.now()})
     if(row.status!=='running'||!anchor.current)return
     const a=anchor.current,wall=Date.now(),mono=performance.now()
     if(interrupted(a.lastWall,a.lastMono,wall,mono)){
       const safe=Math.min(row.target_seconds,elapsedSeconds(a.base,a.started,a.lastMono))
-      void act('pause',safe).then(()=>setMessage('Timer paused after an interruption. Resume when ready.'))
+      void act('pause',safe).then(paused=>{if(paused)setMessage('Computer sleep or a system clock change was detected. Timer paused; resume when ready.')})
       return
     }
     a.lastWall=wall;a.lastMono=mono

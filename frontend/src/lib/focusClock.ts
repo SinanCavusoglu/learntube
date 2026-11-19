@@ -8,7 +8,9 @@ export function remainingSeconds(target:number,elapsed:number):number {
 
 export function interrupted(lastWall:number,lastMonotonic:number,wall:number,monotonic:number):boolean {
   const wallGap=wall-lastWall,monoGap=monotonic-lastMonotonic
-  return wallGap<0 || monoGap<0 || monoGap>10_000 || wallGap-monoGap>5_000
+  // A background tab can delay callbacks for a minute or more while both clocks
+  // keep advancing. That is normal elapsed time, not evidence of computer sleep.
+  return wallGap<0 || monoGap<0 || Math.abs(wallGap-monoGap)>5_000
 }
 
 export function clockText(seconds:number):string {
