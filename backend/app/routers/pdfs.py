@@ -12,8 +12,9 @@ from sqlmodel import Session, select
 
 from app.core.config import MAX_PDF_SIZE_MB, PDF_STORAGE_DIR
 from app.db import get_session
-from app.models import PDFDocument, PDFNote, VocabularyItem, now
+from app.models import Bookmark, PDFDocument, PDFNote, VocabularyItem, now
 from app.schemas import NoteUpdate
+from app.services.search_index import ensure_index
 
 router = APIRouter(prefix='/api/pdfs', tags=['pdfs'])
 CHUNK_BYTES = 1024 * 1024
@@ -84,6 +85,11 @@ def upload_pdf(file: UploadFile = File(...), session: Session = Depends(get_sess
         session.add(document)
         session.commit()
         session.refresh(document)
+        try:
+            ensure_index(session.get_bind(), PDF_STORAGE_DIR)
+        except Exception:
+            # A readable PDF remains usable even if text extraction fails.
+            pass
         return document
     except Exception:
         temp_path.unlink(missing_ok=True)
@@ -160,6 +166,7 @@ def delete_pdf(pdf_id: int, session: Session = Depends(get_session)):
             item.source_pdf_title = document.title
             session.add(item)
         session.exec(delete(PDFNote).where(PDFNote.pdf_id == pdf_id))
+        session.exec(delete(Bookmark).where(Bookmark.pdf_id == pdf_id))
         session.delete(document)
         session.commit()
     except Exception:

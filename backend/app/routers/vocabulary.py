@@ -6,6 +6,7 @@ from app.db import engine, get_session
 from app.models import NotebookNote, PDFDocument, Podcast, PodcastEpisode, ReviewEvent, Video, VocabularyItem
 from app.schemas import ReviewCreate, VocabularyCreate, VocabularyUpdate
 from app.services.scheduling import schedule
+from app.services.difficulty import difficult_words, difficulty_stats
 
 router = APIRouter(prefix='/api/vocabulary', tags=['vocabulary'])
 
@@ -41,6 +42,14 @@ def due(session: Session = Depends(get_session)):
     now = datetime.now(timezone.utc)
     items = session.exec(select(VocabularyItem).order_by(VocabularyItem.created_at)).all()
     return [i for i in items if i.next_review_at is None or i.next_review_at.replace(tzinfo=timezone.utc) <= now]
+
+@router.get('/difficult')
+def difficult(session: Session = Depends(get_session)):
+    return difficult_words(session)
+
+@router.get('/difficult/stats')
+def difficult_stats(session: Session = Depends(get_session)):
+    return difficulty_stats(difficult_words(session))
 
 @router.post('', status_code=status.HTTP_201_CREATED)
 def create_vocabulary(payload: VocabularyCreate, session: Session = Depends(get_session)):

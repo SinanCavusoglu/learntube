@@ -11,14 +11,18 @@ const errorText: Record<number, string> = {
   153: 'YouTube could not verify this embedded player. Try opening the video on YouTube.',
 }
 
-export function YoutubePlayer({ youtubeId, start, onProgress, onPlayingChange, seekTo }: { youtubeId: string; start: number; onProgress: (time: number) => void; onPlayingChange?: (playing:boolean)=>void; seekTo?: number }) {
+export type YoutubePlayerControls = { getCurrentTime: () => number }
+
+export function YoutubePlayer({ youtubeId, start, onProgress, onPlayingChange, onControlsChange, seekTo, seekNonce = 0 }: { youtubeId: string; start: number; onProgress: (time: number) => void; onPlayingChange?: (playing:boolean)=>void; onControlsChange?: (controls: YoutubePlayerControls | null) => void; seekTo?: number; seekNonce?: number }) {
   const host = useRef<HTMLDivElement>(null)
   const player = useRef<any>(null)
+  const ready = useRef(false)
+  const pendingSeek = useRef<number | undefined>(undefined)
   const [error, setError] = useState('')
-  const callbacks=useRef({onProgress,onPlayingChange})
-  callbacks.current={onProgress,onPlayingChange}
+  const callbacks=useRef({onProgress,onPlayingChange,onControlsChange})
+  callbacks.current={onProgress,onPlayingChange,onControlsChange}
 
-  useEffect(() => { if (seekTo !== undefined) player.current?.seekTo?.(seekTo, true) }, [seekTo])
+  useEffect(() => { if (seekTo !== undefined) { pendingSeek.current=seekTo; if(ready.current){player.current?.seekTo?.(seekTo,true);pendingSeek.current=undefined} } }, [seekTo,seekNonce])
   useEffect(() => {
     let cancelled = false
     let timer: number | undefined
@@ -29,14 +33,14 @@ export function YoutubePlayer({ youtubeId, start, onProgress, onPlayingChange, s
         videoId: youtubeId,
         playerVars: { start: Math.floor(start), rel: 0, origin: window.location.origin },
         events: {
-          onReady: (event: any) => { if (start) event.target.seekTo(start, true) },
+          onReady: (event: any) => { if(cancelled)return;ready.current=true;const target=pendingSeek.current??start;if(target>=0)event.target.seekTo(target,true);pendingSeek.current=undefined;callbacks.current.onControlsChange?.({getCurrentTime:()=>Number(event.target.getCurrentTime())}) },
           onStateChange: (event: any) => {
             if (timer) clearInterval(timer)
             callbacks.current.onPlayingChange?.(event.data===1)
             if (event.data === 1) timer = window.setInterval(() => callbacks.current.onProgress(event.target.getCurrentTime()), 5000)
             else if(event.data!==-1) callbacks.current.onProgress(event.target.getCurrentTime())
           },
-          onError: (event: any) => {callbacks.current.onPlayingChange?.(false);setError(errorText[event.data] ?? 'YouTube could not play this video here.')},
+          onError: (event: any) => {ready.current=false;callbacks.current.onControlsChange?.(null);callbacks.current.onPlayingChange?.(false);setError(errorText[event.data] ?? 'YouTube could not play this video here.')},
         },
       })
     }
@@ -50,7 +54,7 @@ export function YoutubePlayer({ youtubeId, start, onProgress, onPlayingChange, s
     }
     const visibility=()=>callbacks.current.onPlayingChange?.(!document.hidden && player.current?.getPlayerState?.()===1)
     document.addEventListener('visibilitychange',visibility)
-    return () => { cancelled = true; if (timer) clearInterval(timer); document.removeEventListener('visibilitychange',visibility); callbacks.current.onPlayingChange?.(false); player.current?.destroy?.() }
+    return () => { cancelled = true; ready.current=false; pendingSeek.current=undefined; callbacks.current.onControlsChange?.(null); if (timer) clearInterval(timer); document.removeEventListener('visibilitychange',visibility); callbacks.current.onPlayingChange?.(false); player.current?.destroy?.() }
   }, [youtubeId])
 
   return <div className="relative aspect-video overflow-hidden rounded-xl border border-white/10 bg-black">

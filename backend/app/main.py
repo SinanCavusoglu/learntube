@@ -11,12 +11,22 @@ from app.routers.pdfs import router as pdfs_router
 from app.routers.ai import router as ai_router
 from app.routers.notebooks import router as notebooks_router
 from app.routers.dictionary import router as dictionary_router
+from app.routers.backups import router as backups_router, service as backup_service
+from app.middleware.backup_gate import BackupGate
+from app.routers.search import router as search_router
+from app.services.search_index import ensure_index
+from app.core.config import PDF_STORAGE_DIR
+from app.routers.bookmarks import router as bookmarks_router
+from app.routers.planner import router as planner_router
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    backup_service.recover_if_needed()
     create_db_and_tables()
+    ensure_index(backup_service.engine, PDF_STORAGE_DIR, retry_failed=True)
     yield
 app = FastAPI(title='LearnTube API', version='0.1.0', lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=True, allow_methods=['*'], allow_headers=['*'], expose_headers=['Accept-Ranges', 'Content-Range', 'Content-Length'])
+app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=True, allow_methods=['*'], allow_headers=['*'], expose_headers=['Accept-Ranges', 'Content-Range', 'Content-Length', 'Content-Disposition'])
+app.add_middleware(BackupGate)
 app.include_router(videos_router)
 app.include_router(vocabulary_router)
 app.include_router(writing_router)
@@ -25,5 +35,9 @@ app.include_router(pdfs_router)
 app.include_router(ai_router)
 app.include_router(notebooks_router)
 app.include_router(dictionary_router)
+app.include_router(backups_router)
+app.include_router(search_router)
+app.include_router(bookmarks_router)
+app.include_router(planner_router)
 @app.get('/api/health', tags=['health'])
 async def health_check() -> dict[str, str]: return {'status': 'ok'}

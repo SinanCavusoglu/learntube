@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select, delete
 from app.db import get_session
-from app.models import TranscriptSegment, Video, VideoNote, VocabularyItem
+from app.models import Bookmark, TranscriptSegment, Video, VideoNote, VocabularyItem
 from app.schemas import ManualTranscript, NoteUpdate, ProgressUpdate, VideoCreate
 from app.services.youtube import extract_video_id, fallback_title, fetch_title
 from app.services.transcripts import fetch_english
@@ -53,7 +53,7 @@ def delete_video(video_id: int, session: Session = Depends(get_session)):
         item.source_video_id = None
         item.source_timestamp = None
         session.add(item)
-    session.exec(delete(TranscriptSegment).where(TranscriptSegment.video_id == video_id)); session.exec(delete(VideoNote).where(VideoNote.video_id == video_id)); session.delete(session.get(Video, video_id)); session.commit()
+    session.exec(delete(Bookmark).where(Bookmark.video_id == video_id)); session.exec(delete(TranscriptSegment).where(TranscriptSegment.video_id == video_id)); session.exec(delete(VideoNote).where(VideoNote.video_id == video_id)); session.delete(session.get(Video, video_id)); session.commit()
 @router.put('/{video_id}/progress')
 def update_progress(video_id: int, payload: ProgressUpdate, session: Session = Depends(get_session)):
     video = video_or_404(session, video_id); video.playback_position = payload.position; video.last_watched_at = datetime.now(timezone.utc); session.add(video); session.commit(); session.refresh(video); return video

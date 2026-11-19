@@ -61,6 +61,7 @@ def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
     with engine.begin() as connection:
         connection.execute(text('CREATE INDEX IF NOT EXISTS ix_reviewevent_reviewed_at ON reviewevent (reviewed_at)'))
+        connection.execute(text('CREATE INDEX IF NOT EXISTS ix_reviewevent_vocab_recent ON reviewevent (vocabulary_id, reviewed_at DESC, id DESC)'))
         connection.execute(text('CREATE INDEX IF NOT EXISTS ix_vocabularyitem_source_pdf_id ON vocabularyitem (source_pdf_id)'))
         connection.execute(text('CREATE INDEX IF NOT EXISTS ix_vocabularyitem_source_note_id ON vocabularyitem (source_note_id)'))
         connection.execute(text('CREATE INDEX IF NOT EXISTS ix_vocabularyitem_source_episode_id ON vocabularyitem (source_episode_id)'))

@@ -32,9 +32,45 @@ cd backend
 
 The health check is available at `http://localhost:8001/api/health`.
 
+## Local backup and restore
+
+On this PC, open **Settings → Backup & Restore** at `http://localhost:5173/settings` (or `http://127.0.0.1:5173/settings`). Click **Create Backup**. In browsers with a save dialog, choose where to save the ZIP; otherwise your browser downloads `learntube-backup-YYYY-MM-DD-HHMMSS.zip` to its usual Downloads folder. Move a copy to another drive or external storage **outside the LearnTube project folder**. A backup stored only beside the project could be lost with the project or PC.
+
+The ZIP contains `database.sqlite3`, referenced files under `uploads/pdfs/`, and `manifest.json` with the creation time, format/schema versions, record counts, sizes, and SHA-256 checksums. SQLite is captured through its online backup API, including committed WAL data. The database contains videos, transcripts, notes, PDF and playback progress, vocabulary and review history, Writing sessions and feedback, Notebook content, and Dashboard activity. Derived search indexes and extracted PDF text are rebuilt from the saved records and PDFs after restoration. Environment files, API keys, application source, dependencies, caches, and temporary files are excluded. Unsaved browser-only drafts are also excluded; wait for the editor to report **Saved** before backing up. If you use `PDF_STORAGE_DIR`, the referenced PDFs from that configured location are included using portable ZIP paths.
+
+To check a ZIP, choose it under **Restore a backup**. LearnTube verifies its manifest, checksums, SQLite integrity, table structure, relationships, and PDF inventory, then displays its date and record summary. Selecting a file does **not** restore it. To restore, review the warning, click **Restore Backup**, and confirm in the browser dialog. The current SQLite database and PDFs are saved first as `backend/safety-backups/learntube-before-restore-*.zip`. LearnTube pauses other API requests while it replaces data, then reloads the page. If replacement fails, it tries to recover the previous data from that safety ZIP. An interrupted operation is recovered before the backend starts again. If startup recovery reports an error, keep the safety ZIP and `backend/.backup-state/` intact before seeking help.
+
+After reinstalling or moving to another computer, install and start LearnTube as described above, then use Settings to inspect and restore your saved ZIP. Re-enter your own API keys and other secrets in `backend/.env`; they are never backed up. Keep the same or a compatible LearnTube version: this backup format currently supports format 1 and schema 1. Backup and restore endpoints are reachable only from the PC itself, even when the rest of LearnTube is shared privately through Tailscale. The backend remains bound to `127.0.0.1` by the provided launch scripts. ZIP uploads are limited to 2 GiB and expanded contents to 4 GiB. A restore coordinates this app's requests but cannot guarantee a single atomic transaction across SQLite and PDF files; the pre-restore safety ZIP and startup recovery protect interrupted operations.
+
 ## Notebook
 
 Open **Notebook** in the sidebar. Create a notebook, then add a blank note or use the **Grammar** template. Notes use Markdown syntax and save automatically after editing; Ctrl+S saves immediately. Search titles and contents within the selected notebook or choose **All notes** to search across notebooks. Select text in the editor and choose **Add selection to Vocabulary** to use the existing vocabulary form. A failed save leaves a local draft in the browser for recovery; the editor shows an error until you edit and retry.
+
+## Global Search
+
+Click **Search** in the sidebar or press **Ctrl+K** (on macOS, **Cmd+K**). Type at least two characters to search saved Vocabulary terms, definitions, examples and notes; saved YouTube titles, notes and transcript segments; PDF titles, notes and extracted page text; and Notebook names, note titles and Markdown content. Results appear together by source. Use ↑/↓ and Enter to open a result, Esc to close, the clear button to start over, and **Show more results** for the next page. Transcript results open the video at the saved timestamp and mark the segment. PDF page results open the matching page. Vocabulary results open the existing edit view; searching does not change review progress.
+
+Search runs entirely in the local SQLite database. FTS5 is used when available, with a bounded SQLite fallback otherwise. Existing records are indexed on backend startup; database triggers maintain the index as records change. PDF text is extracted once per document with the existing `pypdf` library and stored by page. Scanned image-only pages have no searchable text; OCR is not included. PDF indexing failures leave the original document usable and are retried on the next backend start. After restoring a backup, the search index is checked and rebuilt if needed. No search query or saved content is sent to an external service.
+
+## Video and PDF bookmarks
+
+On a saved video, wait for the player to load, move to the desired moment, and choose **Save Bookmark** in the Bookmarks panel. The dialog captures the player's current time; you can change its suggested title and add an optional note. A small bookmark icon beside each timed transcript segment saves that segment's own timestamp. Click a saved bookmark to seek back to it. If the video cannot play, the existing player displays the playback error.
+
+In the PDF reader, choose **Save Bookmark** in the toolbar to save the current page. Saved PDF bookmarks appear in the side panel, including for scanned PDFs. Click one to return to its page. The central **Bookmarks** page in the sidebar lists video and PDF bookmarks together, with filters, search, open, edit, and delete actions. Deleting a bookmark does not delete its source or other notes; deleting a source removes only its related bookmarks.
+
+Bookmarks are stored in the local SQLite database and included in new ZIP backups automatically. Older LearnTube backups without a bookmark table remain restorable; the table is created during restoration. Bookmark titles and notes also appear in Global Search. Bookmarks do not include PDF text highlights or OCR.
+
+## Study Planner
+
+Open **Study Planner** in the sidebar. The Week view starts on Monday; switch to Day for one date, use the arrows or Today to navigate, and choose **New Plan** to add a timed block or an untimed task. The calendar shows all 24 hours in a scrollable grid and places simultaneous blocks side by side. Click a block or task for its details, completion controls, edit and delete actions, and a link into LearnTube. The chosen Day/Week view is remembered in this browser.
+
+Plans may repeat daily, weekly on the first date's weekday, or on selected weekdays until an optional end date. A repeated occurrence can be completed, skipped, edited, moved, or deleted without changing its siblings. **Edit whole series** changes the base schedule; **Delete whole series** removes its occurrences and overrides. Moving one occurrence to a date already occupied by the same series is rejected, as is a series edit that would create a duplicate on a moved occurrence's date. Overnight blocks are deliberately disallowed: end time must be later on the same local date. Plan dates and wall-clock times remain local across daylight-saving changes; the creating browser's IANA timezone is stored with each series. Switching the computer to another timezone does not shift the stored wall times.
+
+Planned time is the sum of timed block durations, including skipped blocks. Completed plan time includes only blocks you explicitly mark completed. Untimed tasks have no duration. Neither action creates `StudyActivity` records or changes the Dashboard's actual study-time totals. The Dashboard's **Upcoming Study Plan** section shows upcoming timed plans and today's unfinished tasks separately from real activity. Saved plans, recurrence rules, and occurrence changes live in the local SQLite database and are included in new ZIP backups. Older backups without planner tables remain restorable. If a linked video, PDF, or note was deleted, the plan stays visible and opens its related library instead.
+
+Planner requests are limited to 63 local calendar days at once. There is no drag-and-drop; use **Edit** to move a block. Editing a whole series can leave old occurrence overrides outside the new recurrence dates dormant. No plans are created automatically.
+
+Run checks with `cd backend; .\.venv\Scripts\python.exe -m unittest discover -s tests -q` and `cd frontend; npm.cmd run build; node --test tests/*.test.mjs`.
 
 ## Dashboard and study time
 
@@ -63,6 +99,14 @@ Selecting text in a YouTube transcript, PDF, or Notebook note opens Add to Vocab
 New expressions are due immediately. Again schedules a card 10 minutes later and sets it to Learning. Good schedules a new card tomorrow; Easy schedules it in four days. For a reviewed card, Good multiplies the previous interval by its ease factor (initially 2.5, minimum one day); Easy multiplies it by the ease factor and 1.3. Again resets the interval and lowers ease by 0.2, to a minimum of 1.3. Easy raises ease by 0.1, to a maximum of 3.0. A card is Mastered only after at least three successful reviews and a scheduled interval of at least 21 days. Due times are compared in UTC and shown in the browser's local time.
 
 Run scheduling checks with `cd backend` then `.\.venv\Scripts\python.exe -m unittest discover -s tests`.
+
+## Difficult Words
+
+Open **Vocabulary** to see the Difficult Words section, its counts, the reason for each classification, and the next scheduled review. Choose **Difficult** in the library filter to search or edit only those expressions. **Practice Difficult Words** opens a focused session with the same front and back card content as scheduled review. Space reveals the answer; 1 means Again and 2 means Got It. Again returns the card later in the session, up to two repeats. The summary shows unique words practiced, Got It, and words needing more practice. Leaving a session discards only that session's queue.
+
+Classification uses actual stored scheduled review events. At least two events are required. A word is difficult after two Again ratings in its latest five events, or three Again ratings in its latest ten. After three consecutive Good or Easy ratings following the latest Again, it leaves the category once its latest five events contain no Again. Words with only aggregate counters and no event history remain unclassified until future real scheduled reviews. Extra practice runs entirely in browser memory: it does not submit review ratings, create events, or change intervals, due dates, review counts, or daily due totals. The local SQLite backup includes the original review history; difficulty is derived again after restoration.
+
+Checks: `cd frontend; npm.cmd run build; node --test tests/difficultPractice.test.mjs` and `cd backend; .\.venv\Scripts\python.exe -m unittest discover -s tests -q`.
 
 ## Structure
 

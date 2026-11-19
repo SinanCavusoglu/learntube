@@ -1,6 +1,7 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 from typing import Optional
 from sqlmodel import Field, SQLModel
+from sqlalchemy import CheckConstraint, UniqueConstraint
 
 def now() -> datetime: return datetime.now(timezone.utc)
 
@@ -103,6 +104,46 @@ class StudyActivity(SQLModel, table=True):
     active_duration_seconds: float
     created_at: datetime = Field(default_factory=now)
 
+
+class StudyPlan(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    request_id: str = Field(unique=True, index=True)
+    title: str
+    category: str
+    description: str = ''
+    start_date: date = Field(index=True)
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+    is_untimed: bool = False
+    recurrence: str = 'none'
+    weekdays: str = ''
+    repeat_until: Optional[date] = Field(default=None, index=True)
+    timezone: str = 'UTC'
+    resource_type: Optional[str] = None
+    resource_id: Optional[int] = None
+    status: str = 'planned'  # Used only by one-time plans.
+    created_at: datetime = Field(default_factory=now)
+    updated_at: datetime = Field(default_factory=now)
+
+
+class StudyPlanOverride(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint('plan_id', 'occurrence_date', name='ux_studyplanoverride_occurrence'),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    plan_id: int = Field(foreign_key='studyplan.id', index=True)
+    occurrence_date: date = Field(index=True)  # Stable original occurrence identity.
+    date_override: Optional[date] = Field(default=None, index=True)
+    is_modified: bool = False
+    title: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+    is_untimed: Optional[bool] = None
+    resource_type: Optional[str] = None
+    resource_id: Optional[int] = None
+    status: str = 'planned'  # planned/completed/skipped/deleted
+    updated_at: datetime = Field(default_factory=now)
+
 class PDFDocument(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
@@ -121,6 +162,25 @@ class PDFNote(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     pdf_id: int = Field(foreign_key='pdfdocument.id', index=True, unique=True)
     content: str = ''
+    updated_at: datetime = Field(default_factory=now)
+
+
+class Bookmark(SQLModel, table=True):
+    __table_args__ = (
+        CheckConstraint('(video_id IS NOT NULL AND pdf_id IS NULL AND timestamp_seconds IS NOT NULL AND page_number IS NULL) OR (video_id IS NULL AND pdf_id IS NOT NULL AND timestamp_seconds IS NULL AND page_number IS NOT NULL)', name='ck_bookmark_source'),
+        CheckConstraint('timestamp_seconds IS NULL OR timestamp_seconds >= 0', name='ck_bookmark_time'),
+        CheckConstraint('page_number IS NULL OR page_number >= 1', name='ck_bookmark_page'),
+        UniqueConstraint('video_id', 'timestamp_seconds', 'title', name='ux_bookmark_video_position_title'),
+        UniqueConstraint('pdf_id', 'page_number', 'title', name='ux_bookmark_pdf_page_title'),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    video_id: Optional[int] = Field(default=None, foreign_key='video.id', index=True)
+    pdf_id: Optional[int] = Field(default=None, foreign_key='pdfdocument.id', index=True)
+    timestamp_seconds: Optional[float] = None
+    page_number: Optional[int] = None
+    title: str
+    note: str = ''
+    created_at: datetime = Field(default_factory=now, index=True)
     updated_at: datetime = Field(default_factory=now)
 
 class Notebook(SQLModel, table=True):

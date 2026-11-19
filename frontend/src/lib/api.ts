@@ -5,8 +5,20 @@ export type Note = { content:string; updated_at?:string }
 export type Vocabulary = { id:number; text:string; meaning:string; example_sentence:string; personal_note:string; part_of_speech:string; cefr_level:string; collocations:string; usage_note:string; synonyms:string; source_video_id:number|null; source_timestamp:number|null; source_pdf_id:number|null; source_pdf_title:string|null; source_page:number|null; source_note_id:number|null; source_note_title:string|null; source_episode_id:number|null; source_episode_title:string|null; source_podcast_title:string|null; source_episode_timestamp:number|null; created_at:string; status:'new'|'learning'|'reviewing'|'mastered'; review_count:number; successful_review_count:number; interval_days:number; next_review_at:string|null }
 export type VocabularyStats = { total:number; new:number; learning:number; reviewing:number; mastered:number; due:number; reviewed_today:number }
 export type ReviewEvent = { id:number; rating:string; reviewed_at:string; previous_status:string; next_status:string; interval_days:number }
+export type DifficultWord = { item:Vocabulary; automatic_difficult:boolean; difficulty_reason:string; recent_again_count:number; review_events_available:number; history_state:'recorded'|'unclassified' }
+export type DifficultStats = { total:number; due:number; practice_available:number }
 async function request<T>(path:string, init?:RequestInit):Promise<T> { const r=await fetch(`${API}${path}`,{headers:{'Content-Type':'application/json',...init?.headers},...init}); if(!r.ok) throw new Error((await r.json().catch(()=>null))?.detail ?? 'Request failed'); return r.status===204 ? undefined as T : r.json() }
 export const api={listVideos:()=>request<Video[]>('/api/videos'), addVideo:(url:string)=>request<Video>('/api/videos',{method:'POST',body:JSON.stringify({url})}), deleteVideo:(id:number)=>request<void>(`/api/videos/${id}`,{method:'DELETE'}), video:(id:string)=>request<Video>(`/api/videos/${id}`), transcript:(id:string)=>request<Segment[]>(`/api/videos/${id}/transcript`), manualTranscript:(id:number,text:string)=>request<Segment[]>(`/api/videos/${id}/transcript/manual`,{method:'PUT',body:JSON.stringify({text})}), notes:(id:string)=>request<Note>(`/api/videos/${id}/notes`), saveNotes:(id:number,content:string)=>request<Note>(`/api/videos/${id}/notes`,{method:'PUT',body:JSON.stringify({content})}), progress:(id:number,position:number)=>request<Video>(`/api/videos/${id}/progress`,{method:'PUT',body:JSON.stringify({position})}), vocabulary:(id:number)=>request<Vocabulary[]>(`/api/vocabulary?video_id=${id}`), addVocabulary:(item:Partial<Vocabulary>)=>request<Vocabulary>('/api/vocabulary',{method:'POST',body:JSON.stringify(item)})}
+export type Bookmark = { id:number; type:'video'|'pdf'; video_id:number|null; pdf_id:number|null; timestamp_seconds:number|null; page_number:number|null; title:string; note:string; source_title:string; created_at:string; updated_at:string }
+export const bookmarksApi = {
+  all:(type:'all'|'video'|'pdf'='all',q='')=>request<Bookmark[]>(`/api/bookmarks?type=${type}&q=${encodeURIComponent(q)}`),
+  video:(id:number)=>request<Bookmark[]>(`/api/videos/${id}/bookmarks`),
+  pdf:(id:number)=>request<Bookmark[]>(`/api/pdfs/${id}/bookmarks`),
+  addVideo:(id:number,timestamp_seconds:number,title:string,note:string)=>request<Bookmark>(`/api/videos/${id}/bookmarks`,{method:'POST',body:JSON.stringify({timestamp_seconds,title,note})}),
+  addPdf:(id:number,page_number:number,title:string,note:string)=>request<Bookmark>(`/api/pdfs/${id}/bookmarks`,{method:'POST',body:JSON.stringify({page_number,title,note})}),
+  update:(id:number,title:string,note:string)=>request<Bookmark>(`/api/bookmarks/${id}`,{method:'PATCH',body:JSON.stringify({title,note})}),
+  remove:(id:number)=>request<void>(`/api/bookmarks/${id}`,{method:'DELETE'}),
+}
 export type DictionaryResult = {word:string;definitions:{definition:string;part_of_speech:string}[];examples:string[]}
 export const dictionaryApi = {
   lookup:async(word:string,signal?:AbortSignal):Promise<DictionaryResult>=>request<DictionaryResult>(`/api/dictionary/lookup?word=${encodeURIComponent(word)}`,{signal}),
@@ -28,6 +40,8 @@ export const notebookApi = {
 export const vocabularyApi = {
   all:()=>request<Vocabulary[]>('/api/vocabulary'),
   stats:()=>request<VocabularyStats>('/api/vocabulary/stats'),
+  difficult:()=>request<DifficultWord[]>('/api/vocabulary/difficult'),
+  difficultStats:()=>request<DifficultStats>('/api/vocabulary/difficult/stats'),
   due:()=>request<Vocabulary[]>('/api/vocabulary/review/due'),
   update:(id:number,changes:Partial<Vocabulary>)=>request<Vocabulary>(`/api/vocabulary/${id}`,{method:'PATCH',body:JSON.stringify(changes)}),
   remove:(id:number)=>request<void>(`/api/vocabulary/${id}`,{method:'DELETE'}),
@@ -56,6 +70,22 @@ export const aiApi = {
 export type StudyDay = { date:string; video:number; vocabulary:number; writing:number; pdf:number; podcast:number; total:number; reviews:number }
 export type DashboardData = { total_seconds:number; today_seconds:number; week_seconds:number; current_streak:number; longest_streak:number; videos_saved:number; pdfs:{total:number;active_seconds:number;recent:{id:number;title:string;last_opened_at:string;last_page:number;total_pages:number}[]}; podcasts:{subscriptions:number;active_seconds:number}; vocabulary:VocabularyStats; writing:{completed:number;task1:number;task2:number;active_seconds:number;recent:{id:number;task_type:number;completed_at:string}|null}; daily:StudyDay[]; weekly:StudyDay[]; recent:{type:'video'|'vocabulary'|'writing'|'pdf'|'podcast';description:string;at:string;link:string}[] }
 export const dashboardApi = { get:()=>request<DashboardData>(`/api/dashboard?timezone_name=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC')}`) }
+export type PlannerCategory = 'Vocabulary'|'Flashcards'|'Listening'|'Reading'|'Writing'|'Grammar'|'General Study'
+export type PlannerRepeat = 'none'|'daily'|'weekly'|'custom'
+export type PlannerStatus = 'planned'|'completed'|'skipped'
+export type PlanInput = {title:string;category:PlannerCategory;description:string;start_date:string;start_time:string|null;end_time:string|null;is_untimed:boolean;recurrence:PlannerRepeat;weekdays:number[];repeat_until:string|null;timezone:string;resource_type:string|null;resource_id:number|null}
+export type PlanRecord = PlanInput & {id:number;request_id:string;status:PlannerStatus}
+export type PlannerOccurrence = {plan_id:number;occurrence_date:string;date:string;title:string;category:PlannerCategory;description:string;start_time:string|null;end_time:string|null;is_untimed:boolean;recurring:boolean;recurrence:PlannerRepeat;timezone:string;status:PlannerStatus;resource_type:string|null;resource_id:number|null;destination_url:string;resource_missing:boolean}
+export type PlannerStats = {planned_minutes:number;completed_minutes:number;completed_tasks:number;total_tasks:number}
+export const plannerApi = {
+  range:(start:string,end:string)=>request<PlannerOccurrence[]>(`/api/planner?start=${start}&end=${end}`),
+  stats:(start:string,end:string)=>request<PlannerStats>(`/api/planner/stats?start=${start}&end=${end}`),
+  get:(id:number)=>request<PlanRecord>(`/api/planner/${id}`),
+  create:(input:PlanInput,request_id:string)=>request<PlanRecord>('/api/planner',{method:'POST',body:JSON.stringify({...input,request_id})}),
+  edit:(id:number,input:PlanInput,occurrence?:string)=>request<PlanRecord|PlannerOccurrence>(`/api/planner/${id}${occurrence?`?occurrence=${occurrence}`:''}`,{method:'PATCH',body:JSON.stringify(input)}),
+  status:(id:number,value:PlannerStatus,occurrence?:string)=>request<PlannerOccurrence>(`/api/planner/${id}/status${occurrence?`?occurrence=${occurrence}`:''}`,{method:'PATCH',body:JSON.stringify({status:value})}),
+  remove:(id:number,occurrence?:string)=>request<void>(`/api/planner/${id}${occurrence?`?occurrence=${occurrence}`:''}`,{method:'DELETE'}),
+}
 export type PDFDocument = {id:number;title:string;original_filename:string;stored_filename:string;file_size_bytes:number;total_pages:number;last_page:number;reading_progress:number;zoom:number;created_at:string;updated_at:string;last_opened_at:string|null}
 export const pdfApi = {
   all:()=>request<PDFDocument[]>('/api/pdfs'),
