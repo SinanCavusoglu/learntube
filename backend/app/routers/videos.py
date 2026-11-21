@@ -13,6 +13,9 @@ def video_or_404(session: Session, video_id: int) -> Video:
     if not video: raise HTTPException(404, 'Video not found')
     return video
 
+def saved_transcript(session: Session, video_id: int) -> list[TranscriptSegment]:
+    return session.exec(select(TranscriptSegment).where(TranscriptSegment.video_id == video_id).order_by(TranscriptSegment.start)).all()
+
 @router.get('')
 def list_videos(session: Session = Depends(get_session)):
     videos = session.exec(select(Video).order_by(Video.created_at.desc())).all()
@@ -65,11 +68,13 @@ def update_notes(video_id: int, payload: NoteUpdate, session: Session = Depends(
     video_or_404(session, video_id); note = session.exec(select(VideoNote).where(VideoNote.video_id == video_id)).first() or VideoNote(video_id=video_id); note.content=payload.content; note.updated_at=datetime.now(timezone.utc); session.add(note); session.commit(); session.refresh(note); return note
 @router.get('/{video_id}/transcript')
 def get_transcript(video_id: int, session: Session = Depends(get_session)):
-    video = video_or_404(session, video_id); cached = session.exec(select(TranscriptSegment).where(TranscriptSegment.video_id == video_id).order_by(TranscriptSegment.start)).all()
+    video = video_or_404(session, video_id); cached = saved_transcript(session, video_id)
     if cached: return cached
     try: rows = fetch_english(video.youtube_id)
     except Exception as exc: raise HTTPException(424, 'English captions could not be retrieved. Paste a transcript manually to continue.') from exc
-    segments=[TranscriptSegment(video_id=video_id, **row) for row in rows]; session.add_all(segments); session.commit(); return segments
+    if not rows:
+        raise HTTPException(424, 'No English captions were returned. Try again or paste a transcript manually.')
+    segments=[TranscriptSegment(video_id=video_id, **row) for row in rows]; session.add_all(segments); session.commit(); return saved_transcript(session, video_id)
 @router.post('/{video_id}/transcript/refresh')
 def refresh_transcript(video_id: int, session: Session = Depends(get_session)):
     video = video_or_404(session, video_id)
@@ -85,7 +90,7 @@ def refresh_transcript(video_id: int, session: Session = Depends(get_session)):
     segments = [TranscriptSegment(video_id=video_id, **row) for row in rows]
     session.add_all(segments)
     session.commit()
-    return segments
+    return saved_transcript(session, video_id)
 @router.put('/{video_id}/transcript/manual')
 def manual_transcript(video_id: int, payload: ManualTranscript, session: Session = Depends(get_session)):
     video_or_404(session, video_id)
@@ -96,4 +101,4 @@ def manual_transcript(video_id: int, payload: ManualTranscript, session: Session
     session.exec(delete(TranscriptSegment).where(TranscriptSegment.video_id == video_id))
     session.add_all(segments)
     session.commit()
-    return segments
+    return saved_transcript(session, video_id)

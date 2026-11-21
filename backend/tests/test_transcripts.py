@@ -61,6 +61,36 @@ class TranscriptRefreshTests(unittest.TestCase):
         with Session(self.engine) as session:
             return [(row.text, row.start) for row in session.exec(select(TranscriptSegment).where(TranscriptSegment.video_id == self.video_id)).all()]
 
+    def test_empty_first_fetch_can_be_retried_without_page_reload(self):
+        with Session(self.engine) as session:
+            video = Video(youtube_id='newvideo123', url='https://example.test/new', title='New lesson')
+            session.add(video)
+            session.commit()
+            session.refresh(video)
+            new_id = video.id
+        with patch('app.routers.videos.fetch_english', return_value=[]):
+            first = self.client.get(f'/api/videos/{new_id}/transcript')
+        self.assertEqual(first.status_code, 424)
+        with patch('app.routers.videos.fetch_english', return_value=[
+            {'text': 'Caption now available', 'start': 1.0, 'duration': 2.0}]):
+            second = self.client.get(f'/api/videos/{new_id}/transcript')
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(second.json()[0]['text'], 'Caption now available')
+
+    def test_first_successful_fetch_returns_complete_segments(self):
+        with Session(self.engine) as session:
+            video = Video(youtube_id='firstfetch1', url='https://example.test/first', title='First lesson')
+            session.add(video)
+            session.commit()
+            session.refresh(video)
+            new_id = video.id
+        with patch('app.routers.videos.fetch_english', return_value=[
+            {'text': 'Ready immediately', 'start': 3.0, 'duration': 2.0}]):
+            response = self.client.get(f'/api/videos/{new_id}/transcript')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()[0]['text'], 'Ready immediately')
+        self.assertGreater(response.json()[0]['id'], 0)
+
     def test_failed_refresh_preserves_transcript_and_search(self):
         with patch('app.routers.videos.fetch_english', side_effect=RuntimeError('offline')):
             result = self.client.post(f'/api/videos/{self.video_id}/transcript/refresh')
@@ -75,6 +105,7 @@ class TranscriptRefreshTests(unittest.TestCase):
         with patch('app.routers.videos.fetch_english', return_value=[{'text': 'New caption', 'start': 30.0, 'duration': 2.0}]):
             result = self.client.post(f'/api/videos/{self.video_id}/transcript/refresh')
         self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()[0]['text'], 'New caption')
         self.assertEqual(self.captions(), [('New caption', 30.0)])
         self.assertFalse(search(self.engine, 'Original', 'videos', 8, 0, self.fts)['groups']['videos'])
         self.assertTrue(search(self.engine, 'caption', 'videos', 8, 0, self.fts)['groups']['videos'])
@@ -83,3 +114,8 @@ class TranscriptRefreshTests(unittest.TestCase):
         result = self.client.put(f'/api/videos/{self.video_id}/transcript/manual', json={'text': '  \n  '})
         self.assertEqual(result.status_code, 422)
         self.assertEqual(self.captions(), [('Original saved caption', 12.0)])
+
+    def test_manual_save_returns_complete_segments(self):
+        result = self.client.put(f'/api/videos/{self.video_id}/transcript/manual', json={'text': 'One caption'})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()[0]['text'], 'One caption')
