@@ -4,15 +4,17 @@ Personal IELTS study platform built with React, TypeScript, Vite, Tailwind CSS, 
 
 ## Start everything (Windows)
 
-Double-click `start-learntube.bat` in the project folder. It starts the API on port 8001, the frontend on port 5173, and opens LearnTube in your browser.
+For everyday use, double-click `LearnTube.vbs` in the project folder. It starts the API and frontend in the background and opens LearnTube in your browser without command windows. Double-click `Stop LearnTube.vbs` to stop services started by this hidden launcher. Closing the browser tab does not stop the local services; after restarting Windows, double-click `LearnTube.vbs` again. The PC must stay awake for iPhone access.
 
-The launcher checks installed dependencies and waits for both services to respond before opening the page. If LearnTube is already running, it reuses the existing services. Run `start-learntube.bat --check` in Command Prompt to check dependencies without starting anything. Close the **LearnTube API** and **LearnTube Frontend** command windows to stop the local application.
+For visible backend and frontend logs while developing, double-click `start-learntube.bat`. It starts the API on port 8001, the frontend on port 5173, and opens LearnTube in your browser.
+
+Both launchers check installed dependencies and wait for the services to respond. If LearnTube is already running, they reuse the existing services. Run `start-learntube.bat --check` in Command Prompt to check dependencies without starting anything. The hidden launcher's logs are in `backend/.runtime/` if startup fails. To stop services started with the visible launcher, close the **LearnTube API** and **LearnTube Frontend** command windows.
 
 Video and PDF notes keep an unsaved recovery draft in this browser if a save fails or you leave while a save is pending. Reopen the same item in the same browser to retry. Wait for **Saved** before creating a backup: browser recovery drafts are not included in backup ZIPs.
 
 ## Use from an iPhone over your private Tailscale network (Windows PC)
 
-Install Tailscale on this PC and your iPhone and sign in to the same tailnet. On this PC, enable Tailscale Serve once with `tailscale serve --bg 5173` in an Administrator terminal. Double-click `start-learntube-mobile.bat` to run the API and UI on this PC. In iPhone Safari, open the HTTPS address shown by `tailscale serve status`. Keep Tailscale connected on the iPhone, this PC awake, and both LearnTube command windows open. The existing `start-learntube.bat` remains for PC-only use; close its windows before starting mobile mode because both use ports 5173 and 8001.
+Install Tailscale on this PC and your iPhone and sign in to the same tailnet. On this PC, enable Tailscale Serve once with `tailscale serve --bg 5173` in an Administrator terminal. `LearnTube.vbs` also supports iPhone access when the Tailscale command is installed and connected: it starts Vite in mobile mode with the PC's current tailnet host. In iPhone Safari, open the HTTPS address shown by `tailscale serve status`. Keep Tailscale connected on the iPhone and this PC awake. For a visible mobile-mode console, use `start-learntube-mobile.bat`; it requires ports 5173 and 8001 to be free.
 
 The frontend proxies `/api` to the local backend in both PC and mobile modes, so the browser uses the same origin for application requests. The one-line `frontend/.env.mobile` is created from `frontend/mobile.env.template` on first start. Tailscale Serve is private to devices allowed in your tailnet; do not enable Tailscale Funnel. Gemini can also work from the iPhone when `TAILSCALE_AI_ORIGIN` is set to the exact private HTTPS URL and `TAILSCALE_AI_LOGIN` to your Tailscale login in the ignored `backend/.env`; the backend checks both plus Tailscale's identity header. The optional `AI_DAILY_REQUEST_LIMIT` remains a local safeguard. Other app data stays in the existing local SQLite database and PDF uploads on this PC. Stop sharing with `tailscale serve --https=443 off` in an Administrator terminal.
 

@@ -12,6 +12,7 @@ backend/*.db
 backend/uploads/
 backend/safety-backups/
 backend/.backup-state/
+backend/.runtime/
 *.db
 *.db-*
 *.sqlite
