@@ -4,6 +4,7 @@ import { BookOpenText, Pin, Plus, Search, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, notebookApi, type NotebookDraft, type NotebookNote } from '@/lib/api'
 import { VocabularyLookupChoices } from '@/components/VocabularyLookupChoices'
+import { SafeMarkdown } from '@/components/SafeMarkdown'
 
 const panel = 'rounded-xl border border-white/10 bg-[#18191d]'
 const input = 'w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-300'
@@ -37,6 +38,7 @@ function NoteEditor({note,notebooks,onSaved,expanded}:{note:NotebookNote;noteboo
   const [saveTick,setSaveTick]=useState(0)
   const [selected,setSelected]=useState(''),[meaning,setMeaning]=useState(''),[examples,setExamples]=useState(''),[personal,setPersonal]=useState('')
   const [vocabOpen,setVocabOpen]=useState(false)
+  const [preview,setPreview]=useState(false)
   const textarea=useRef<HTMLTextAreaElement>(null),latest=useRef(draft),revision=useRef(note.revision),pending=useRef<Promise<void>|null>(null),timer=useRef<number|undefined>(undefined),alive=useRef(true)
   const client=useQueryClient()
   const saveVocab=useMutation({mutationFn:()=>api.addVocabulary({text:selected.trim(),meaning,example_sentence:examples,personal_note:personal,source_note_id:note.id}),onSuccess:()=>{setVocabOpen(false);client.invalidateQueries({queryKey:['vocabulary']});client.invalidateQueries({queryKey:['dashboard']})}})
@@ -61,14 +63,36 @@ function NoteEditor({note,notebooks,onSaved,expanded}:{note:NotebookNote;noteboo
   useEffect(()=>{if(status==='Unsaved'){clearTimeout(timer.current);timer.current=window.setTimeout(()=>{void save()},700)}return()=>clearTimeout(timer.current)},[draft,status,save,saveTick])
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;clearTimeout(timer.current);if(localStorage.getItem(`learntube-note-${note.id}`))void save()}},[note.id,save])
   const addSelection=()=>{const element=textarea.current;if(!element)return;const text=element.value.slice(element.selectionStart,element.selectionEnd).trim();if(!text)return;setSelected(text.slice(0,500));setMeaning('');setExamples('');setPersonal('');setVocabOpen(true)}
-  const wrap=(before:string,after=before)=>{const element=textarea.current;if(!element)return;const start=element.selectionStart,end=element.selectionEnd;const next=draft.content.slice(0,start)+before+draft.content.slice(start,end)+after+draft.content.slice(end);change({...draft,content:next});requestAnimationFrame(()=>{element.focus();element.setSelectionRange(start+before.length,end+before.length)})}
+  const wrap=(before:string,after=before,label='text')=>{
+    const element=textarea.current
+    if(!element)return
+    const start=element.selectionStart,end=element.selectionEnd
+    const selected=draft.content.slice(start,end)
+    if(after===''&&before.endsWith(' ')){
+      const lineStart=draft.content.lastIndexOf('\n',start-1)+1
+      const lineEnd=draft.content.indexOf('\n',end)
+      const blockEnd=lineEnd<0?draft.content.length:lineEnd
+      const lines=draft.content.slice(lineStart,blockEnd).split('\n')
+      const block=lines.map(line=>before+line).join('\n')
+      change({...draft,content:draft.content.slice(0,lineStart)+block+draft.content.slice(blockEnd)})
+      requestAnimationFrame(()=>{element.focus();element.setSelectionRange(start+before.length,end+before.length*lines.length)})
+      return
+    }
+    const content=selected||label
+    change({...draft,content:draft.content.slice(0,start)+before+content+after+draft.content.slice(end)})
+    requestAnimationFrame(()=>{element.focus();element.setSelectionRange(start+before.length,start+before.length+content.length)})
+  }
   return <section className={`${panel} min-w-0 p-4 sm:p-6`}>
     <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-zinc-500">Markdown note</p><span role="status" className={`text-xs ${status==='Error'?'text-rose-300':status==='Saved'?'text-emerald-300':'text-amber-200'}`}>{status==='Error'?'Save failed. Draft kept locally.':status}</span></div>
     <input aria-label="Note title" value={draft.title} onChange={event=>change({...draft,title:event.target.value})} className="mt-4 w-full bg-transparent text-2xl font-semibold outline-none placeholder:text-zinc-600" placeholder="Untitled note"/>
     <div className="mt-4 flex flex-wrap items-center gap-2 border-y border-white/10 py-3 text-xs"><button onClick={()=>change({...draft,is_pinned:!draft.is_pinned})} className="flex items-center gap-1 rounded px-2 py-1 text-zinc-300 hover:bg-white/10"><Pin size={14}/>{draft.is_pinned?'Unpin':'Pin'}</button><label className="flex items-center gap-2 text-zinc-400">Move to<select aria-label="Move note to notebook" value={draft.notebook_id} onChange={event=>change({...draft,notebook_id:Number(event.target.value)})} className="rounded border border-white/10 bg-[#202126] px-2 py-1 text-zinc-100">{notebooks.map(book=><option key={book.id} value={book.id}>{book.name}</option>)}</select></label><button onClick={addSelection} className="rounded px-2 py-1 text-indigo-300 hover:bg-white/10">Add selection to Vocabulary</button></div>
-    <div className="mt-3 flex flex-wrap gap-1 text-xs text-zinc-400">{[['Heading','## ',''],['Bold','**','**'],['Italic','*','*'],['Bullet','- ',''],['Numbered','1. ',''],['Quote','> ',''],['Link','[','](https://)'],['Code','`','`']].map(([label,before,after])=><button key={label} type="button" onClick={()=>wrap(before,after)} className="rounded px-2 py-1 hover:bg-white/10 hover:text-white">{label}</button>)}</div>
-    <textarea ref={textarea} aria-label="Note content" value={draft.content} onChange={event=>change({...draft,content:event.target.value})} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();clearTimeout(timer.current);void save()}}} className={`${expanded?'min-h-[72vh]':'min-h-[55vh]'} mt-3 w-full resize-y bg-transparent text-base leading-7 text-zinc-200 outline-none placeholder:text-zinc-600`} placeholder="Write in Markdown…" spellCheck/>
-    <p className="mt-3 text-xs text-zinc-500">Select text in the editor to save it as vocabulary. Ctrl+S saves immediately.</p>
+    <div role="tablist" aria-label="Note view" className="mt-4 flex gap-4 border-b border-white/10 text-sm"><button type="button" role="tab" aria-selected={!preview} onClick={()=>setPreview(false)} className={`pb-2 ${!preview?'border-b-2 border-indigo-300 text-indigo-200':'text-zinc-400 hover:text-white'}`}>Edit</button><button type="button" role="tab" aria-selected={preview} onClick={()=>setPreview(true)} className={`pb-2 ${preview?'border-b-2 border-indigo-300 text-indigo-200':'text-zinc-400 hover:text-white'}`}>Preview</button></div>
+    <div hidden={preview}>
+      <div className="mt-3 flex flex-wrap gap-1 text-xs text-zinc-400">{[['Heading','## ',''],['Bold','**','**'],['Italic','*','*'],['Bullet','- ',''],['Numbered','1. ',''],['Quote','> ',''],['Link','[','](https://)'],['Code','`','`']].map(([label,before,after])=><button key={label} type="button" onMouseDown={event=>event.preventDefault()} onClick={()=>wrap(before,after,label==='Link'?'link text':label==='Code'?'code':'text')} className="rounded px-2 py-1 hover:bg-white/10 hover:text-white">{label}</button>)}</div>
+      <textarea ref={textarea} aria-label="Note content" value={draft.content} onChange={event=>change({...draft,content:event.target.value})} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();clearTimeout(timer.current);void save()}}} className={`${expanded?'min-h-[72vh]':'min-h-[55vh]'} mt-3 w-full resize-y bg-transparent text-base leading-7 text-zinc-200 outline-none placeholder:text-zinc-600`} placeholder="Write in Markdown…" spellCheck/>
+      <p className="mt-3 text-xs text-zinc-500">Select text before using a format button, then choose Preview to see the result. Bold: **word**. Ctrl+S saves immediately.</p>
+    </div>
+    {preview&&<div role="tabpanel" aria-label="Formatted note preview" className={`${expanded?'min-h-[72vh]':'min-h-[55vh]'} mt-3 rounded-lg border border-white/10 bg-black/10 p-4`}>{draft.content.trim()?<SafeMarkdown source={draft.content}/>:<p className="text-sm text-zinc-500">This note is empty. Choose Edit to start writing.</p>}</div>}
     {vocabOpen&&<div role="dialog" aria-modal="true" aria-label="Add to Vocabulary" className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"><form onSubmit={(event:FormEvent)=>{event.preventDefault();saveVocab.mutate()}} className={`${panel} w-full max-w-lg space-y-3 p-6 shadow-2xl`}><h2 className="text-lg font-semibold">Add to Vocabulary</h2><label className="block text-xs text-zinc-400">Word or phrase<input required maxLength={500} value={selected} onChange={event=>setSelected(event.target.value)} className={`${input} mt-1`}/></label><VocabularyLookupChoices text={selected} definition={meaning} examples={examples} onFill={(definition,sentences,oldDefinition,oldExamples)=>{setMeaning(current=>current===oldDefinition?definition:current);setExamples(current=>current===oldExamples?sentences:current)}}/><label className="block text-xs text-zinc-400">Definition<textarea value={meaning} onChange={event=>setMeaning(event.target.value)} className={`${input} mt-1 min-h-20`}/></label><label className="block text-xs text-zinc-400">Examples<textarea value={examples} onChange={event=>setExamples(event.target.value)} className={`${input} mt-1 min-h-20`}/></label><label className="block text-xs text-zinc-400">Personal Notes (optional)<textarea value={personal} onChange={event=>setPersonal(event.target.value)} className={`${input} mt-1 min-h-16`}/></label>{saveVocab.error&&<p role="alert" className="text-xs text-rose-300">{saveVocab.error.message}</p>}<div className="flex justify-end gap-2"><button type="button" onClick={()=>setVocabOpen(false)} className="rounded px-3 py-2 text-sm text-zinc-400">Cancel</button><button disabled={saveVocab.isPending||!selected.trim()} className="rounded bg-white px-3 py-2 text-sm text-zinc-950 disabled:opacity-50">Save expression</button></div></form></div>}
   </section>
 }
